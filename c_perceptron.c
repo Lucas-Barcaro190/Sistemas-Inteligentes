@@ -14,23 +14,22 @@ typedef enum {
     VIRGINICA
 } IrisSpecies;
 
-// The Perceptron structure remains the same
+// Perceptron structure using camelCase
 typedef struct {
     double *weights;
     double bias;
     double learningRate;
 } Perceptron;
 
-// Function prototypes
+// Function prototypes in camelCase
 void initializePerceptron(Perceptron *p);
 void freePerceptron(Perceptron *p);
-int activationFunction(double weightedSum);
 int predict(Perceptron *p, double *inputs);
 void train(Perceptron *p, double *inputs, int desiredOutput);
 IrisSpecies speciesNameToEnum(char *species);
-void run_training_session(FILE *outputFile, const char* sessionTitle, 
-                          double allData[][NUM_INPUTS], IrisSpecies allLabels[], 
-                          IrisSpecies positiveClass, IrisSpecies negativeClass1, IrisSpecies negativeClass2);
+double* runTrainingSession(const char* sessionTitle, 
+                           double allData[][NUM_INPUTS], IrisSpecies allLabels[], 
+                           IrisSpecies positiveClass, IrisSpecies negativeClass1, IrisSpecies negativeClass2);
 
 int main() {
     srand(time(NULL));
@@ -58,48 +57,59 @@ int main() {
     }
     fclose(file);
 
-    // --- 2. Open Output File and Run All Training Sessions ---
-    FILE *resultsFile = fopen("results.txt", "w");
+    // --- 2. Run All Training Sessions and Collect Results ---
+    printf("Running all 6 training sessions with Step Function...\n");
+
+    double *results1 = runTrainingSession("Setosa vs Rest", allData, allLabels, SETOSA, VERSICOLOR, VIRGINICA);
+    double *results2 = runTrainingSession("Versicolor vs Rest", allData, allLabels, VERSICOLOR, SETOSA, VIRGINICA);
+    double *results3 = runTrainingSession("Virginica vs Rest", allData, allLabels, VIRGINICA, SETOSA, VERSICOLOR);
+    double *results4 = runTrainingSession("Setosa vs Versicolor", allData, allLabels, SETOSA, VERSICOLOR, -1);
+    double *results5 = runTrainingSession("Setosa vs Virginica", allData, allLabels, SETOSA, VIRGINICA, -1);
+    double *results6 = runTrainingSession("Versicolor vs Virginica", allData, allLabels, VERSICOLOR, VIRGINICA, -1);
+
+    // --- 3. Write All Collected Results to a Single CSV File ---
+    FILE *resultsFile = fopen("results.csv", "w");
     if (resultsFile == NULL) {
-        printf("Error: Could not create results.txt for writing.\n");
+        printf("Error: Could not create results.csv for writing.\n");
         return 1;
     }
-
-    printf("Running all 6 training sessions... This may take a moment.\n");
-
-    // --- Part 1: One-vs-Rest Training ---
-    run_training_session(resultsFile, "Train 1: Setosa vs. Rest", allData, allLabels, SETOSA, VERSICOLOR, VIRGINICA);
-    run_training_session(resultsFile, "Train 2: Versicolor vs. Rest", allData, allLabels, VERSICOLOR, SETOSA, VIRGINICA);
-    run_training_session(resultsFile, "Train 3: Virginica vs. Rest", allData, allLabels, VIRGINICA, SETOSA, VERSICOLOR);
-
-    // --- Part 2: One-vs-One (Pair-to-Pair) Training ---
-    run_training_session(resultsFile, "Train 4: Setosa vs. Versicolor", allData, allLabels, SETOSA, VERSICOLOR, -1); // -1 indicates no third class
-    run_training_session(resultsFile, "Train 5: Setosa vs. Virginica", allData, allLabels, SETOSA, VIRGINICA, -1);
-    run_training_session(resultsFile, "Train 6: Versicolor vs. Virginica", allData, allLabels, VERSICOLOR, VIRGINICA, -1);
-
+    
+    // Write header
+    fprintf(resultsFile, "Epoch,Setosa vs Rest,Versicolor vs Rest,Virginica vs Rest,Setosa vs Versicolor,Setosa vs Virginica,Versicolor vs Virginica\n");
+    
+    // Write data rows
+    for (int i = 0; i < MAX_EPOCHS; i++) {
+        fprintf(resultsFile, "%d,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f\n",
+                i + 1,
+                results1[i],
+                results2[i],
+                results3[i],
+                results4[i],
+                results5[i],
+                results6[i]);
+    }
+    
     fclose(resultsFile);
-    printf("Training complete. Results exported to results.txt\n");
+    printf("Training complete. Results exported to results.csv\n");
+
+    // --- 4. Free allocated memory ---
+    free(results1);
+    free(results2);
+    free(results3);
+    free(results4);
+    free(results5);
+    free(results6);
 
     return 0;
 }
 
-/**
- * @brief Runs a full training and testing session for a given classification scenario.
- * @param outputFile Handle to the file where results will be written.
- * @param sessionTitle The header for this training run (e.g., "Setosa vs. Rest").
- * @param allData The complete dataset of 150 samples.
- * @param allLabels The complete set of labels (as enums).
- * @param positiveClass The species to be treated as class '1'.
- * @param negativeClass1 A species to be treated as class '0'.
- * @param negativeClass2 Another species for class '0'. Use -1 if not needed (for one-vs-one).
- */
-void run_training_session(FILE *outputFile, const char* sessionTitle, 
+
+double* runTrainingSession(const char* sessionTitle, 
                           double allData[][NUM_INPUTS], IrisSpecies allLabels[], 
                           IrisSpecies positiveClass, IrisSpecies negativeClass1, IrisSpecies negativeClass2) {
     
     printf("Starting session: %s\n", sessionTitle);
 
-    // --- 1. Filter and Label Data for This Specific Session ---
     double sessionData[TOTAL_SAMPLES][NUM_INPUTS];
     int sessionLabels[TOTAL_SAMPLES];
     int sessionSampleCount = 0;
@@ -107,16 +117,15 @@ void run_training_session(FILE *outputFile, const char* sessionTitle,
     for (int i = 0; i < TOTAL_SAMPLES; i++) {
         if (allLabels[i] == positiveClass) {
             memcpy(sessionData[sessionSampleCount], allData[i], NUM_INPUTS * sizeof(double));
-            sessionLabels[sessionSampleCount] = 1; // Positive class
+            sessionLabels[sessionSampleCount] = 1;
             sessionSampleCount++;
         } else if (allLabels[i] == negativeClass1 || allLabels[i] == negativeClass2) {
             memcpy(sessionData[sessionSampleCount], allData[i], NUM_INPUTS * sizeof(double));
-            sessionLabels[sessionSampleCount] = 0; // Negative class
+            sessionLabels[sessionSampleCount] = 0;
             sessionSampleCount++;
         }
     }
 
-    // --- 2. Split This Session's Data into Training and Testing (80/20 split) ---
     int numTrainingSamples = sessionSampleCount * 0.8;
     int numTestingSamples = sessionSampleCount - numTrainingSamples;
 
@@ -127,12 +136,12 @@ void run_training_session(FILE *outputFile, const char* sessionTitle,
     
     int trainIndex = 0, testIndex = 0;
     for (int i = 0; i < sessionSampleCount; i++) {
-        if (i % 5 < 4) { // 4 for training
+        if (i % 5 < 4) {
             if (trainIndex < numTrainingSamples) {
                 memcpy(trainingData[trainIndex], sessionData[i], NUM_INPUTS * sizeof(double));
                 trainingOutputs[trainIndex++] = sessionLabels[i];
             }
-        } else { // 1 for testing
+        } else {
              if (testIndex < numTestingSamples) {
                 memcpy(testingData[testIndex], sessionData[i], NUM_INPUTS * sizeof(double));
                 testingOutputs[testIndex++] = sessionLabels[i];
@@ -140,54 +149,28 @@ void run_training_session(FILE *outputFile, const char* sessionTitle,
         }
     }
 
-    // --- 3. Initialize Perceptron and Tracking Variables ---
     Perceptron p;
     initializePerceptron(&p);
     
-    double bestAccuracy = -1.0;
-    double bestWeights[NUM_INPUTS];
-    double bestBias = 0.0;
-    double epochAccuracies[MAX_EPOCHS];
+    double *epochAccuracies = (double*)malloc(MAX_EPOCHS * sizeof(double));
 
-    // --- 4. Main Training and Per-Epoch Testing Loop ---
     for (int i = 0; i < MAX_EPOCHS; i++) {
-        // Train for one epoch
         for (int j = 0; j < numTrainingSamples; j++) {
             train(&p, trainingData[j], trainingOutputs[j]);
         }
         
-        // Test accuracy for this epoch
         int correctPredictions = 0;
         for (int j = 0; j < numTestingSamples; j++) {
             if (predict(&p, testingData[j]) == testingOutputs[j]) {
                 correctPredictions++;
             }
         }
-        double currentAccuracy = (double)correctPredictions / numTestingSamples * 100.0;
-        epochAccuracies[i] = currentAccuracy;
-
-        // Check if this is the best model so far
-        if (currentAccuracy > bestAccuracy) {
-            bestAccuracy = currentAccuracy;
-            memcpy(bestWeights, p.weights, NUM_INPUTS * sizeof(double));
-            bestBias = p.bias;
-        }
+        epochAccuracies[i] = (double)correctPredictions / numTestingSamples * 100.0;
     }
-
-    // --- 5. Write Results to File ---
-    fprintf(outputFile, "%s\n", sessionTitle);
-    fprintf(outputFile, "Best Weights: [%.4f, %.4f, %.4f, %.4f], Bias: %.4f (Achieved %.2f%% Accuracy)\n", 
-            bestWeights[0], bestWeights[1], bestWeights[2], bestWeights[3], bestBias, bestAccuracy);
     
-    fprintf(outputFile, "Precision through epochs:\n");
-    for (int i = 0; i < MAX_EPOCHS; i++) {
-        fprintf(outputFile, "epoch %d: %.2f%%\n", i + 1, epochAccuracies[i]);
-    }
-    fprintf(outputFile, "\n\n");
-
     freePerceptron(&p);
+    return epochAccuracies;
 }
-
 
 // --- Helper Functions ---
 
@@ -200,7 +183,7 @@ IrisSpecies speciesNameToEnum(char *species) {
 
 void initializePerceptron(Perceptron *p) {
     p->weights = (double*)malloc(NUM_INPUTS * sizeof(double));
-    p->learningRate = 0.1;
+    p->learningRate = 0.01;
     for (int i = 0; i < NUM_INPUTS; i++) {
         p->weights[i] = ((double)rand() / RAND_MAX) - 0.5;
     }
@@ -212,21 +195,21 @@ void freePerceptron(Perceptron *p) {
     p->weights = NULL;
 }
 
-int activationFunction(double weightedSum) {
-    return weightedSum >= 0 ? 1 : 0;
-}
+// --- Core PERCEPTRON Logic (Step Function) ---
 
 int predict(Perceptron *p, double *inputs) {
     double weightedSum = p->bias;
     for (int i = 0; i < NUM_INPUTS; i++) {
         weightedSum += p->weights[i] * inputs[i];
     }
-    return activationFunction(weightedSum);
+    // Step Function
+    return weightedSum >= 0 ? 1 : 0;
 }
 
 void train(Perceptron *p, double *inputs, int desiredOutput) {
-    if (predict(p, inputs) != desiredOutput) {
-        int error = desiredOutput - predict(p, inputs);
+    int prediction = predict(p, inputs);
+    if (prediction != desiredOutput) {
+        int error = desiredOutput - prediction;
         for (int i = 0; i < NUM_INPUTS; i++) {
             p->weights[i] += p->learningRate * error * inputs[i];
         }
