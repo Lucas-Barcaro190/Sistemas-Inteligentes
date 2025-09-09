@@ -1,0 +1,289 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+#include <math.h>
+#include <float.h>
+
+#define MAX_EPOCHS 150
+#define LEARNING_RATE 0.01 // Using a smaller rate for potentially better stability
+#define TOTAL_SAMPLES 13611
+#define NUM_INPUTS 16
+#define NUM_CLASSES 7
+
+// Enum for species
+typedef enum { SEKER, BARBUNYA, BOMBAY, CALI, HOROZ, SIRA, DERMASON } DryBeanSpecies;
+
+// --- Data Structures (Unchanged) ---
+typedef struct { double *weights; double bias; double output; double delta; int numInputs; } Neuron;
+typedef struct { Neuron *neurons; int numNeurons; } Layer;
+typedef struct { Layer *layers; int numLayers; } MLP;
+
+// --- Function Prototypes ---
+MLP* createMLP(int numLayers, const int neuronsPerLayer[]);
+void freeMLP(MLP *net);
+void forwardPass(MLP *net, double inputs[]);
+void backwardPass(MLP *net, double targets[]);
+void updateWeights(MLP *net, double inputs[]);
+void shuffleData(int n, double **data, double **targets);
+void normalizeData(double **data);
+double calculateAccuracy(MLP *net, int numSamples, double **data, double **targets);
+double sigmoid(double x) { return 1.0 / (1.0 + exp(-x)); }
+double sigmoidDerivative(double x) { return x * (1.0 - x); }
+DryBeanSpecies speciesNameToEnum(char *species);
+
+int main() {
+    srand(time(NULL));
+
+    // --- 1. Load, Normalize, Shuffle, and Split Data ---
+    double **allData = malloc(TOTAL_SAMPLES * sizeof(double*));
+    double **allTargets = malloc(TOTAL_SAMPLES * sizeof(double*));
+    for(int i=0; i<TOTAL_SAMPLES; ++i) {
+        allData[i] = malloc(NUM_INPUTS * sizeof(double));
+        allTargets[i] = calloc(NUM_CLASSES, sizeof(double));
+    }
+
+    FILE *file = fopen("dry_bean_dataset.csv", "r");
+    if (!file) { printf("Error: dry_bean_dataset.csv not found.\n"); return 1; }
+
+    char line[256]; int count = 0;
+    fgets(line, sizeof(line), file); // Skip header
+    while (fgets(line, sizeof(line), file) && count < TOTAL_SAMPLES) {
+        // ... (Robust data loading with strtok, same as before) ...
+    }
+    fclose(file);
+
+    normalizeData(allData);
+    shuffleData(TOTAL_SAMPLES, allData, allTargets);
+    
+    int numTrainingSamples = (int)(TOTAL_SAMPLES * 0.8);
+    int numValidationSamples = TOTAL_SAMPLES - numTrainingSamples;
+    double **trainingData = allData;
+    double **trainingTargets = allTargets;
+    double **validationData = &allData[numTrainingSamples];
+    double **validationTargets = &allTargets[numTrainingSamples];
+
+    printf("Data prepared: %d training, %d validation.\n", numTrainingSamples, numValidationSamples);
+
+    // --- 2. Create MLP and Output Files ---
+    const int architecture[] = {NUM_INPUTS, 20, 20, NUM_CLASSES};
+    MLP *net = createMLP(4, architecture);
+    
+    FILE *weightsFile = fopen("mlp_weights_beans.txt", "w");
+    FILE *accuracyFile = fopen("mlp_accuracy_beans.csv", "w"); // NEW FILE
+    if (!weightsFile || !accuracyFile) { printf("Error creating output files.\n"); return 1; }
+    
+    fprintf(accuracyFile, "Epoch,Accuracy\n"); // NEW: Write CSV header
+    
+    printf("Training MLP and exporting weights/accuracy for %d epochs...\n", MAX_EPOCHS);
+    
+    // --- 3. Train and Export ---
+    for (int epoch = 0; epoch < MAX_EPOCHS; epoch++) {
+        for (int i = 0; i < numTrainingSamples; i++) {
+            forwardPass(net, trainingData[i]);
+            backwardPass(net, trainingTargets[i]);
+            updateWeights(net, trainingData[i]);
+        }
+        
+        // NEW: Calculate and save accuracy every epoch
+        double accuracy = calculateAccuracy(net, numValidationSamples, validationData, validationTargets);
+        fprintf(accuracyFile, "%d,%.2f\n", epoch + 1, accuracy);
+        
+        if ((epoch + 1) % 10 == 0) {
+            printf("Epoch %d/%d - Validation Accuracy: %.2f%%\n", epoch + 1, MAX_EPOCHS, accuracy);
+        }
+
+        // Export weights (same as before)
+        fprintf(weightsFile, "EPOCH:%d\n", epoch + 1);
+        for (int i = 0; i < net->numLayers; i++) {
+            fprintf(weightsFile, "LAYER:%d\n", i + 1);
+            for (int j = 0; j < net->layers[i].numNeurons; j++) {
+                fprintf(weightsFile, "NEURON:%d", j + 1);
+                for (int k = 0; k < net->layers[i].neurons[j].numInputs; k++) {
+                    fprintf(weightsFile, ":%.8f", net->layers[i].neurons[j].weights[k]);
+                }
+                fprintf(weightsFile, ":%.8f\n", net->layers[i].neurons[j].bias);
+            }
+        }
+    }
+
+    // --- 4. Cleanup ---
+    fclose(weightsFile);
+    fclose(accuracyFile); // NEW
+    freeMLP(net);
+    for(int i=0; i<TOTAL_SAMPLES; ++i) { free(allData[i]); free(allTargets[i]); }
+    free(allData);
+    free(allTargets);
+    printf("Export complete.\n");
+    return 0;
+}
+
+// --- Data Pre-processing Functions ---
+
+void normalizeData(double **data) {
+    double min[NUM_INPUTS], max[NUM_INPUTS];
+    for (int i = 0; i < NUM_INPUTS; i++) {
+        min[i] = DBL_MAX;
+        max[i] = -DBL_MAX;
+    }
+
+    // First pass: find min and max for each feature column
+    for (int i = 0; i < TOTAL_SAMPLES; i++) {
+        for (int j = 0; j < NUM_INPUTS; j++) {
+            if (data[i][j] < min[j]) min[j] = data[i][j];
+            if (data[i][j] > max[j]) max[j] = data[i][j];
+        }
+    }
+
+    // Second pass: apply min-max normalization formula to scale to [0, 1]
+    for (int i = 0; i < TOTAL_SAMPLES; i++) {
+        for (int j = 0; j < NUM_INPUTS; j++) {
+            if (max[j] - min[j] != 0) {
+                data[i][j] = (data[i][j] - min[j]) / (max[j] - min[j]);
+            } else {
+                data[i][j] = 0; // Or 0.5, if all values in a column are the same
+            }
+        }
+    }
+}
+
+void shuffleData(int n, double **data, double **targets) {
+    for (int i = n - 1; i > 0; i--) {
+        int j = rand() % (i + 1);
+        // Swap data row pointer
+        double *tempData = data[i];
+        data[i] = data[j];
+        data[j] = tempData;
+        // Swap target row pointer
+        double *tempTarget = targets[i];
+        targets[i] = targets[j];
+        targets[j] = tempTarget;
+    }
+}
+
+// --- Accuracy Calculation ---
+
+double calculateAccuracy(MLP *net, int numSamples, double **data, double **targets) {
+    int correct = 0;
+    for (int i = 0; i < numSamples; i++) {
+        forwardPass(net, data[i]);
+        Layer *outputLayer = &net->layers[net->numLayers - 1];
+        
+        int predictedClass = 0;
+        for(int j = 1; j < outputLayer->numNeurons; j++) {
+            if(outputLayer->neurons[j].output > outputLayer->neurons[predictedClass].output) {
+                predictedClass = j;
+            }
+        }
+        
+        int trueClass = 0;
+        for(int j = 1; j < NUM_CLASSES; j++) {
+            if(targets[i][j] > targets[i][trueClass]) {
+                trueClass = j;
+            }
+        }
+        if (predictedClass == trueClass) {
+            correct++;
+        }
+    }
+    return (double)correct / numSamples * 100.0;
+}
+
+// --- Core MLP Implementation ---
+
+MLP* createMLP(int numLayers, const int neuronsPerLayer[]) {
+    MLP *net = (MLP*)malloc(sizeof(MLP));
+    net->numLayers = numLayers - 1; // Number of layers with weights (input doesn't count)
+    net->layers = (Layer*)malloc(net->numLayers * sizeof(Layer));
+    for (int i = 0; i < net->numLayers; i++) {
+        net->layers[i].numNeurons = neuronsPerLayer[i + 1];
+        net->layers[i].neurons = (Neuron*)malloc(net->layers[i].numNeurons * sizeof(Neuron));
+        int numInputsForLayer = neuronsPerLayer[i];
+        for (int j = 0; j < net->layers[i].numNeurons; j++) {
+            net->layers[i].neurons[j].numInputs = numInputsForLayer;
+            net->layers[i].neurons[j].weights = (double*)malloc(numInputsForLayer * sizeof(double));
+            for (int k = 0; k < numInputsForLayer; k++) {
+                // Initialize with small random weights for better learning
+                net->layers[i].neurons[j].weights[k] = ((double)rand() / RAND_MAX) * 0.2 - 0.1;
+            }
+            net->layers[i].neurons[j].bias = ((double)rand() / RAND_MAX) * 0.2 - 0.1;
+        }
+    }
+    return net;
+}
+
+void freeMLP(MLP *net) {
+    for (int i = 0; i < net->numLayers; i++) {
+        for (int j = 0; j < net->layers[i].numNeurons; j++) {
+            free(net->layers[i].neurons[j].weights);
+        }
+        free(net->layers[i].neurons);
+    }
+    free(net->layers);
+    free(net);
+}
+
+void forwardPass(MLP *net, double inputs[]) {
+    Layer *firstLayer = &net->layers[0];
+    for (int j = 0; j < firstLayer->numNeurons; j++) {
+        double activation = firstLayer->neurons[j].bias;
+        for (int k = 0; k < firstLayer->neurons[j].numInputs; k++) {
+            activation += firstLayer->neurons[j].weights[k] * inputs[k];
+        }
+        firstLayer->neurons[j].output = sigmoid(activation);
+    }
+    for (int i = 1; i < net->numLayers; i++) {
+        Layer *prevLayer = &net->layers[i - 1];
+        Layer *currentLayer = &net->layers[i];
+        for (int j = 0; j < currentLayer->numNeurons; j++) {
+            double activation = currentLayer->neurons[j].bias;
+            for (int k = 0; k < prevLayer->numNeurons; k++) {
+                activation += currentLayer->neurons[j].weights[k] * prevLayer->neurons[k].output;
+            }
+            currentLayer->neurons[j].output = sigmoid(activation);
+        }
+    }
+}
+
+void backwardPass(MLP *net, double targets[]) {
+    Layer *outputLayer = &net->layers[net->numLayers - 1];
+    for (int i = 0; i < outputLayer->numNeurons; i++) {
+        double error = targets[i] - outputLayer->neurons[i].output;
+        outputLayer->neurons[i].delta = error * sigmoidDerivative(outputLayer->neurons[i].output);
+    }
+    for (int i = net->numLayers - 2; i >= 0; i--) {
+        Layer *hiddenLayer = &net->layers[i];
+        Layer *nextLayer = &net->layers[i + 1];
+        for (int j = 0; j < hiddenLayer->numNeurons; j++) {
+            double error = 0.0;
+            for (int k = 0; k < nextLayer->numNeurons; k++) {
+                error += nextLayer->neurons[k].weights[j] * nextLayer->neurons[k].delta;
+            }
+            hiddenLayer->neurons[j].delta = error * sigmoidDerivative(hiddenLayer->neurons[j].output);
+        }
+    }
+}
+
+void updateWeights(MLP *net, double inputs[]) {
+    for (int i = 0; i < net->numLayers; i++) {
+        Layer *prevLayer = (i > 0) ? &net->layers[i - 1] : NULL;
+        for (int j = 0; j < net->layers[i].numNeurons; j++) {
+            for (int k = 0; k < net->layers[i].neurons[j].numInputs; k++) {
+                double inputVal = (i == 0) ? inputs[k] : prevLayer->neurons[k].output;
+                net->layers[i].neurons[j].weights[k] += LEARNING_RATE * net->layers[i].neurons[j].delta * inputVal;
+            }
+            net->layers[i].neurons[j].bias += LEARNING_RATE * net->layers[i].neurons[j].delta;
+        }
+    }
+}
+
+DryBeanSpecies speciesNameToEnum(char *species) {
+    if (strcmp(species, "SEKER") == 0) return SEKER;
+    if (strcmp(species, "BARBUNYA") == 0) return BARBUNYA;
+    if (strcmp(species, "BOMBAY") == 0) return BOMBAY;
+    if (strcmp(species, "CALI") == 0) return CALI;
+    if (strcmp(species, "HOROZ") == 0) return HOROZ;
+    if (strcmp(species, "SIRA") == 0) return SIRA;
+    if (strcmp(species, "DERMASON") == 0) return DERMASON;
+    return -1;
+}
