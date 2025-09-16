@@ -1,0 +1,5 @@
+usar a base load_digits, ver se e possivel usar a KNN baunilha para testar
+caracteres
+
+testar a biblioteca segmentation models -> tem varias redes ja treinadas para
+fazer segmentacao
