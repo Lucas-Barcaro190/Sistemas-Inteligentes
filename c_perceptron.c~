@@ -4,7 +4,7 @@
 #include <time.h>
 
 #define NUM_INPUTS 4
-#define MAX_EPOCHS 200
+#define MAX_EPOCHS 100
 #define TOTAL_SAMPLES 150
 
 // Enum for species to make code more readable

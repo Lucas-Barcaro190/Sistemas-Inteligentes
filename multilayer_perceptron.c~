@@ -4,7 +4,7 @@
 #include <time.h>
 #include <math.h>
 
-#define MAX_EPOCHS 100
+#define MAX_EPOCHS 300
 #define LEARNING_RATE 0.1
 #define TOTAL_SAMPLES 150
 
@@ -31,31 +31,22 @@ typedef struct {
 } MLP;
 
 // --- Function Prototypes ---
-// MLP Management
 MLP* createMLP(int numLayers, const int neuronsPerLayer[]);
 void freeMLP(MLP *net);
-
-// Core Logic
 void forwardPass(MLP *net, double inputs[]);
 void backwardPass(MLP *net, double targets[]);
 void updateWeights(MLP *net, double inputs[]);
-
-// Main Training Orchestrator
 double* runTrainingSession(const char* sessionTitle, int numLayers, const int neuronsPerLayer[],
                            double allData[][4], IrisSpecies allLabels[],
                            IrisSpecies class1, IrisSpecies class2, IrisSpecies class3, int isMultiClass);
-
-// Math and Helpers
 double sigmoid(double x) { return 1.0 / (1.0 + exp(-x)); }
 double sigmoidDerivative(double x) { return x * (1.0 - x); }
 IrisSpecies speciesNameToEnum(char *species);
-
 
 // --- Main Program Execution ---
 int main() {
     srand(time(NULL));
 
-    // Load data once
     double allData[TOTAL_SAMPLES][4];
     IrisSpecies allLabels[TOTAL_SAMPLES];
     FILE *file = fopen("iris.data", "r");
@@ -68,26 +59,24 @@ int main() {
     }
     fclose(file);
 
-    // --- Define Network Architectures and Run Sessions ---
     const int binaryArchitecture[] = {4, 5, 1}; 
     const int multiClassArchitecture[] = {4, 7, 3}; 
 
     printf("Running all 7 MLP training sessions...\n");
-    //double *r1 = runTrainingSession("Setosa vs Rest", 3, binaryArchitecture, allData, allLabels, SETOSA, VERSICOLOR, VIRGINICA, 0);
-    //double *r2 = runTrainingSession("Versicolor vs Rest", 3, binaryArchitecture, allData, allLabels, VERSICOLOR, SETOSA, VIRGINICA, 0);
-    //double *r3 = runTrainingSession("Virginica vs Rest", 3, binaryArchitecture, allData, allLabels, VIRGINICA, SETOSA, VERSICOLOR, 0);
-    //double *r4 = runTrainingSession("Setosa vs Versicolor", 3, binaryArchitecture, allData, allLabels, SETOSA, VERSICOLOR, -1, 0);
-    //double *r5 = runTrainingSession("Setosa vs Virginica", 3, binaryArchitecture, allData, allLabels, SETOSA, VIRGINICA, -1, 0);
-    //double *r6 = runTrainingSession("Versicolor vs Virginica", 3, binaryArchitecture, allData, allLabels, VERSICOLOR, VIRGINICA, -1, 0);
+    double *r1 = runTrainingSession("Setosa vs Rest", 3, binaryArchitecture, allData, allLabels, SETOSA, VERSICOLOR, VIRGINICA, 0);
+    double *r2 = runTrainingSession("Versicolor vs Rest", 3, binaryArchitecture, allData, allLabels, VERSICOLOR, SETOSA, VIRGINICA, 0);
+    double *r3 = runTrainingSession("Virginica vs Rest", 3, binaryArchitecture, allData, allLabels, VIRGINICA, SETOSA, VERSICOLOR, 0);
+    double *r4 = runTrainingSession("Setosa vs Versicolor", 3, binaryArchitecture, allData, allLabels, SETOSA, VERSICOLOR, -1, 0);
+    double *r5 = runTrainingSession("Setosa vs Virginica", 3, binaryArchitecture, allData, allLabels, SETOSA, VIRGINICA, -1, 0);
+    double *r6 = runTrainingSession("Versicolor vs Virginica", 3, binaryArchitecture, allData, allLabels, VERSICOLOR, VIRGINICA, -1, 0);
     double *r7 = runTrainingSession("Multi-Class (All 3)", 3, multiClassArchitecture, allData, allLabels, SETOSA, VERSICOLOR, VIRGINICA, 1);
 
-    // --- Export Results to CSV ---
     FILE *resultsFile = fopen("multilayer_perceptron_results.csv", "w");
     if (!resultsFile) { printf("Error creating results file.\n"); return 1; }
     
     fprintf(resultsFile, "Epoch,TrainingScenario,Accuracy\n");
     const char *scenarios[] = {"Setosa vs Rest", "Versicolor vs Rest", "Virginica vs Rest", "Setosa vs Versicolor", "Setosa vs Virginica", "Versicolor vs Virginica", "Multi-Class (All 3)"};
-    double *results[] = {r7};
+    double *results[] = {r1, r2, r3, r4, r5, r6, r7};
 
     for (int i = 0; i < MAX_EPOCHS; i++) {
         for (int j = 0; j < 7; j++) {
@@ -98,26 +87,22 @@ int main() {
     fclose(resultsFile);
     printf("Training complete. Results exported to multilayer_perceptron_results.csv\n");
 
-    // Cleanup
     for(int i=0; i<7; ++i) free(results[i]);
     return 0;
 }
-
 
 // --- Core MLP Implementation ---
 
 MLP* createMLP(int numLayers, const int neuronsPerLayer[]) {
     MLP *net = (MLP*)malloc(sizeof(MLP));
-    net->numLayers = numLayers;
-    net->layers = (Layer*)malloc(numLayers * sizeof(Layer));
+    net->numLayers = numLayers - 1; // Number of layers with weights (input layer doesn't count)
+    net->layers = (Layer*)malloc(net->numLayers * sizeof(Layer));
 
-    for (int i = 0; i < numLayers; i++) {
-        net->layers[i].numNeurons = neuronsPerLayer[i];
-        net->layers[i].neurons = (Neuron*)malloc(neuronsPerLayer[i] * sizeof(Neuron));
-        // For the first layer, the number of inputs is the number of features (4)
-        // For subsequent layers, it's the number of neurons in the previous layer.
-        int numInputs = (i == 0) ? 4 : neuronsPerLayer[i-1];
-        for (int j = 0; j < neuronsPerLayer[i]; j++) {
+    for (int i = 0; i < net->numLayers; i++) {
+        net->layers[i].numNeurons = neuronsPerLayer[i + 1];
+        net->layers[i].neurons = (Neuron*)malloc(net->layers[i].numNeurons * sizeof(Neuron));
+        int numInputs = neuronsPerLayer[i];
+        for (int j = 0; j < net->layers[i].numNeurons; j++) {
             net->layers[i].neurons[j].numInputs = numInputs;
             net->layers[i].neurons[j].weights = (double*)malloc(numInputs * sizeof(double));
             for (int k = 0; k < numInputs; k++) {
@@ -141,31 +126,29 @@ void freeMLP(MLP *net) {
 }
 
 void forwardPass(MLP *net, double inputs[]) {
-    double layerInputs[4];
-    memcpy(layerInputs, inputs, 4 * sizeof(double));
-
-    for (int i = 0; i < net->numLayers; i++) {
-        double layerOutputs[net->layers[i].numNeurons];
-        for (int j = 0; j < net->layers[i].numNeurons; j++) {
-            double activation = net->layers[i].neurons[j].bias;
-            for (int k = 0; k < net->layers[i].neurons[j].numInputs; k++) {
-                activation += net->layers[i].neurons[j].weights[k] * layerInputs[k];
-            }
-            net->layers[i].neurons[j].output = sigmoid(activation);
-            layerOutputs[j] = net->layers[i].neurons[j].output;
+    // First hidden layer
+    Layer *firstLayer = &net->layers[0];
+    for (int j = 0; j < firstLayer->numNeurons; j++) {
+        double activation = firstLayer->neurons[j].bias;
+        for (int k = 0; k < firstLayer->neurons[j].numInputs; k++) {
+            activation += firstLayer->neurons[j].weights[k] * inputs[k];
         }
-        // This memcpy is not safe for subsequent layers; we need a flexible buffer
-        // A better approach is needed here, but for a single hidden layer it's okay.
-        // Let's assume a single hidden layer for simplicity in this pass.
-        if (i < net->numLayers - 1) {
-            // This will cause issues if the next layer expects a different number of inputs
-            // A more robust solution involves dynamic allocation or a fixed max size buffer.
-            // For now, let's keep it simple and fix updateWeights logic which is the main point.
-             memcpy(layerInputs, layerOutputs, net->layers[i].numNeurons * sizeof(double));
+        firstLayer->neurons[j].output = sigmoid(activation);
+    }
+
+    // Subsequent layers
+    for (int i = 1; i < net->numLayers; i++) {
+        Layer *prevLayer = &net->layers[i - 1];
+        Layer *currentLayer = &net->layers[i];
+        for (int j = 0; j < currentLayer->numNeurons; j++) {
+            double activation = currentLayer->neurons[j].bias;
+            for (int k = 0; k < prevLayer->numNeurons; k++) {
+                activation += currentLayer->neurons[j].weights[k] * prevLayer->neurons[k].output;
+            }
+            currentLayer->neurons[j].output = sigmoid(activation);
         }
     }
 }
-
 
 void backwardPass(MLP *net, double targets[]) {
     Layer *outputLayer = &net->layers[net->numLayers - 1];
@@ -174,7 +157,7 @@ void backwardPass(MLP *net, double targets[]) {
         outputLayer->neurons[i].delta = error * sigmoidDerivative(outputLayer->neurons[i].output);
     }
 
-    for (int i = net->numLayers - 2; i >= 0; i--) {
+    for (int i = net->numLayers - (1 + 1); i >= 0; i--) {
         Layer *hiddenLayer = &net->layers[i];
         Layer *nextLayer = &net->layers[i + 1];
         for (int j = 0; j < hiddenLayer->numNeurons; j++) {
@@ -187,40 +170,28 @@ void backwardPass(MLP *net, double targets[]) {
     }
 }
 
-// CORRECTED VERSION of updateWeights
 void updateWeights(MLP *net, double inputs[]) {
     for (int i = 0; i < net->numLayers; i++) {
-        if (i == 0) {
-            // First layer uses the original inputs
-            for (int j = 0; j < net->layers[i].numNeurons; j++) {
-                for (int k = 0; k < net->layers[i].neurons[j].numInputs; k++) {
-                    net->layers[i].neurons[j].weights[k] += LEARNING_RATE * net->layers[i].neurons[j].delta * inputs[k];
-                }
-                net->layers[i].neurons[j].bias += LEARNING_RATE * net->layers[i].neurons[j].delta;
+        double *currentInputs = (i == 0) ? inputs : NULL;
+        Layer *prevLayer = (i > 0) ? &net->layers[i-1] : NULL;
+
+        for (int j = 0; j < net->layers[i].numNeurons; j++) {
+            for (int k = 0; k < net->layers[i].neurons[j].numInputs; k++) {
+                double inputVal = (i == 0) ? currentInputs[k] : prevLayer->neurons[k].output;
+                net->layers[i].neurons[j].weights[k] += LEARNING_RATE * net->layers[i].neurons[j].delta * inputVal;
             }
-        } else {
-            // Subsequent layers use the outputs of the previous layer as inputs
-            int prevLayerNeuronCount = net->layers[i-1].numNeurons;
-            for (int j = 0; j < net->layers[i].numNeurons; j++) {
-                for (int k = 0; k < prevLayerNeuronCount; k++) {
-                    net->layers[i].neurons[j].weights[k] += LEARNING_RATE * net->layers[i].neurons[j].delta * net->layers[i-1].neurons[k].output;
-                }
-                net->layers[i].neurons[j].bias += LEARNING_RATE * net->layers[i].neurons[j].delta;
-            }
+            net->layers[i].neurons[j].bias += LEARNING_RATE * net->layers[i].neurons[j].delta;
         }
     }
 }
 
-
-// --- Training Orchestration ---
-
-double* runTrainingSession(const char* sessionTitle, int numLayers, const int neuronsPerLayer[],
+double* runTrainingSession(const char* sessionTitle, int numArchLayers, const int architecture[],
                            double allData[][4], IrisSpecies allLabels[],
                            IrisSpecies class1, IrisSpecies class2, IrisSpecies class3, int isMultiClass) {
     printf("Starting session: %s\n", sessionTitle);
 
     double sessionData[TOTAL_SAMPLES][4];
-    double sessionTargets[TOTAL_SAMPLES][3];
+    double sessionTargets[TOTAL_SAMPLES][3] = {{0}};
     int sessionCount = 0;
 
     for (int i = 0; i < TOTAL_SAMPLES; i++) {
@@ -234,9 +205,7 @@ double* runTrainingSession(const char* sessionTitle, int numLayers, const int ne
         if (useSample) {
             memcpy(sessionData[sessionCount], allData[i], 4 * sizeof(double));
             if (isMultiClass) {
-                sessionTargets[sessionCount][0] = (allLabels[i] == SETOSA);
-                sessionTargets[sessionCount][1] = (allLabels[i] == VERSICOLOR);
-                sessionTargets[sessionCount][2] = (allLabels[i] == VIRGINICA);
+                sessionTargets[sessionCount][allLabels[i]] = 1.0;
             } else {
                 sessionTargets[sessionCount][0] = (allLabels[i] == class1);
             }
@@ -247,7 +216,7 @@ double* runTrainingSession(const char* sessionTitle, int numLayers, const int ne
     int numTraining = sessionCount * 0.8;
     int numTesting = sessionCount - numTraining;
     
-    MLP *net = createMLP(numLayers, neuronsPerLayer);
+    MLP *net = createMLP(numArchLayers, architecture);
     double *accuracies = (double*)malloc(MAX_EPOCHS * sizeof(double));
 
     for (int epoch = 0; epoch < MAX_EPOCHS; epoch++) {
@@ -259,18 +228,23 @@ double* runTrainingSession(const char* sessionTitle, int numLayers, const int ne
         int correct = 0;
         for (int i = numTraining; i < sessionCount; i++) {
             forwardPass(net, sessionData[i]);
+            Layer *outputLayer = &net->layers[net->numLayers - 1];
             if (isMultiClass) {
                 int predictedClass = 0;
-                if (net->layers[numLayers-1].neurons[1].output > net->layers[numLayers-1].neurons[predictedClass].output) predictedClass = 1;
-                if (net->layers[numLayers-1].neurons[2].output > net->layers[numLayers-1].neurons[predictedClass].output) predictedClass = 2;
-                
+                for(int j = 1; j < outputLayer->numNeurons; j++) {
+                    if(outputLayer->neurons[j].output > outputLayer->neurons[predictedClass].output) {
+                        predictedClass = j;
+                    }
+                }
                 int trueClass = 0;
-                if (sessionTargets[i][1] > sessionTargets[i][0]) trueClass = 1;
-                if (sessionTargets[i][2] > sessionTargets[i][trueClass]) trueClass = 2;
-
+                for(int j = 1; j < 3; j++) {
+                    if(sessionTargets[i][j] > sessionTargets[i][trueClass]) {
+                        trueClass = j;
+                    }
+                }
                 if (predictedClass == trueClass) correct++;
             } else {
-                int prediction = net->layers[numLayers-1].neurons[0].output > 0.5;
+                int prediction = outputLayer->neurons[0].output > 0.5;
                 if (prediction == (int)sessionTargets[i][0]) correct++;
             }
         }

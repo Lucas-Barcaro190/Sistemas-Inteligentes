@@ -4,7 +4,7 @@
 #include <time.h>
 #include <math.h>
 
-#define MAX_EPOCHS 300
+#define MAX_EPOCHS 200
 #define LEARNING_RATE 0.1
 #define TOTAL_SAMPLES 150
 
@@ -157,7 +157,7 @@ void backwardPass(MLP *net, double targets[]) {
         outputLayer->neurons[i].delta = error * sigmoidDerivative(outputLayer->neurons[i].output);
     }
 
-    for (int i = net->numLayers - 2; i >= 0; i--) {
+    for (int i = net->numLayers - (1 + 1); i >= 0; i--) {
         Layer *hiddenLayer = &net->layers[i];
         Layer *nextLayer = &net->layers[i + 1];
         for (int j = 0; j < hiddenLayer->numNeurons; j++) {
